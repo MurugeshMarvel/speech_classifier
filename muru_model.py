@@ -4,6 +4,7 @@ import timeit
 import theano
 import theano.tensor as T
 import pickle
+import sys
 
 def load_data(dataset):
 	file  = open(dataset,'rb')
@@ -17,7 +18,7 @@ def load_data(dataset):
                                  borrow=borrow)
 		return shared_x, T.cast(shared_y,'int32')
 	train_set_x, train_set_y = shared_dataset(data)
-	val = [(train_set_x, train_set_y)]
+	val = [train_set_x, train_set_y]
 	return val
 class LogisticRegression(object):
     def __init__(self, input, n_in, n_out):
@@ -71,7 +72,7 @@ class hiddenLayer(object):
 		if W is None:
 			W_values = np.asarray(rng.uniform(low=-np.sqrt(6. / (n_in + n_out)),
                     high=np.sqrt(6. / (n_in + n_out)),
-                    size=(n_in, n_out)), dtpye = theano.config.floatX)
+                    size=(n_in, n_out)), dtype = theano.config.floatX)
 			if activation == theano.tensor.nnet.sigmoid:
 				W_values *= 4
 			W = theano.shared(value = W_values, name = 'W', borrow= True)
@@ -85,18 +86,18 @@ class hiddenLayer(object):
 		self.params = [self.W, self.b]
 
 class model(object):
-	def __init__(self,rng, input , n_in, hidden, n_out):
+	def __init__(self,rng, input , n_in, n_hidden, n_out):
 		self.hiddenlayer = hiddenLayer(rng =rng, input = input, n_in = n_in, n_out=n_hidden, activation=T.tanh)
 		self.logregression = LogisticRegression(input = self.hiddenlayer.output, n_in = n_hidden, n_out = n_out)
 		self.L1 = abs(self.hiddenlayer.W.sum() + abs(self.logregression.W).sum())
 		self.L2_sqr = ((self.hiddenlayer.W**2).sum() + (self.logregression.W**2).sum())
 		self.negative_log_likelihood = (self.logregression.negative_log_likelihood)
 		self.errors = self.logregression.errors
-		self.params = self.hiddenLayer.params + self.logregression.params
+		self.params = self.hiddenlayer.params + self.logregression.params
 		self.input = input
 
 
-def test_model(learning_rate = 0.01, L1_reg = 0.00, L2_reg = 0.0001, n_epochs = 1000, dataset = 'dataset.dat', batch_size=20, n_hidden=500):
+def test_model(learning_rate = 0.01, L1_reg = 0.00, L2_reg = 0.0001, n_epochs = 500, dataset = 'dataset.pkl', batch_size=20, n_hidden=500):
 	datasets = load_data(dataset)
 	train_set_x, train_set_y = datasets
 
@@ -106,7 +107,7 @@ def test_model(learning_rate = 0.01, L1_reg = 0.00, L2_reg = 0.0001, n_epochs = 
 	y = T.ivector('y')
 
 	rng = np.random.RandomState(1234)
-	classifier = model(rng  = rng ,input=X, n_in = 20*43, n_hidden = n_hidden, n_out = 5 )
+	classifier = model(rng  = rng ,input=x, n_in = 4920, n_hidden = n_hidden, n_out = 5 )
 	cost = (classifier.negative_log_likelihood(y) + L1_reg*classifier.L1 + L2_reg*classifier.L2_sqr )
 	gparams = [T.grad(cost,param) for param in classifier.params]
 	updates = [(param, param - learning_rate * gparam) for param, gparam in zip(classifier.params, gparams)]
@@ -129,8 +130,24 @@ def test_model(learning_rate = 0.01, L1_reg = 0.00, L2_reg = 0.0001, n_epochs = 
 		for minibatch_index in range(n_train_batches):
 			minibatch_avg_cost = train_model(minibatch_index)
 		if epoch % 100 == 0:
-			print 'epoch ',epoch,minibatch_index
+			print 'epoch ',epoch,minibatch_avg_cost
+		with open('best_model','wb') as f:
+			pickle.dump((classifier.params, classifier.logregression.y_pred,classifier.input),f)
+
+def predict(input):
+	g = open('best_model','rb')
+	a,b,c  = pickle.load(g)
+	predict_model = theano.function(inputs = [c],outputs = b)
+	predicted_value = predict_model(input)
+	print 'finished'
 				
 if __name__ == '__main__':
-	test_model()
+	choice = sys.argv[1]
+	if choice == 'train':
+		test_model()
+	fl = open('dataset.pkl','rb')
+	val = pickle.load(fl)
+	if choice == 'predict':
+		predict(val[0][2])
+	
 	print 'done'
